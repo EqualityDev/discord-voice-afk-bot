@@ -1,24 +1,3 @@
-pm2 restart afkbot
-pm2 logs afkbot --lines 5const { execSync } = require('child_process');
-
-const requiredModules = [
-    'discord.js-selfbot-v13',
-    '@discordjs/voice',
-    'libsodium-wrappers'
-];
-
-function checkModules(modules) {
-    modules.forEach(module => {
-        try {
-            require.resolve(module);
-        } catch (e) {
-            console.log(`Module "${module}" is not installed. Installing...`);
-            execSync(`npm install ${module}`, { stdio: 'inherit' });
-        }
-    });
-}
-checkModules(requiredModules);
-
 const Discord = require('discord.js-selfbot-v13');
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 
@@ -28,22 +7,13 @@ const client = new Discord.Client({
     partials: ['CHANNEL', 'MESSAGE']
 });
 
-const token = process.env.DISCORD_TOKEN || 'TOKEN_DISINI';
-
-// Whitelist — hanya user ini yang bisa kontrol bot
+const token = 'TOKEN_DISINI';
 const OWNER_ID = '1430728197720375367';
-
-// Simpan info channel asal per guild
 const targetChannels = {};
-
-function isOwner(message) {
-    return message.author.id === OWNER_ID;
-}
 
 function joinChannel(channel, guildId) {
     const existing = getVoiceConnection(guildId);
     if (existing) existing.destroy();
-
     joinVoiceChannel({
         channelId: channel.id,
         guildId: guildId,
@@ -51,120 +21,94 @@ function joinChannel(channel, guildId) {
         selfDeaf: false,
         selfMute: true
     });
-
     console.log(`[join] Masuk ke: ${channel.name}`);
 }
 
 client.on('messageCreate', async (message) => {
-    if (!isOwner(message)) return;
+    if (message.author.id !== OWNER_ID) return;
 
-    // JOIN
     if (message.content === 'join') {
-        const voiceChannel = message.member?.voice?.channel;
-        if (!voiceChannel) {
-            return message.reply('Kamu harus masuk voice channel dulu!');
-        }
-
-        targetChannels[message.guild.id] = voiceChannel;
-        joinChannel(voiceChannel, message.guild.id);
-        message.reply(`✅ Standby di **${voiceChannel.name}** — auto rejoin aktif`);
+        const vc = message.member?.voice?.channel;
+        if (!vc) return message.reply('Kamu harus masuk voice channel dulu!');
+        targetChannels[message.guild.id] = vc;
+        joinChannel(vc, message.guild.id);
+        message.reply(`✅ Standby di **${vc.name}** — auto rejoin aktif`);
     }
 
-    // LEAVE
     if (message.content === 'leave') {
-        const existing = getVoiceConnection(message.guild.id);
-        if (existing) {
-            existing.destroy();
+        const conn = getVoiceConnection(message.guild.id);
+        if (conn) {
+            conn.destroy();
             delete targetChannels[message.guild.id];
-            console.log('[leave] Keluar dari voice channel.');
-            message.reply('👋 Keluar dari voice channel. Auto rejoin dimatikan.');
+            message.reply('👋 Keluar. Auto rejoin dimatikan.');
         } else {
             message.reply('Bot tidak ada di voice channel.');
         }
     }
 
-    // STATUS
     if (message.content === 'status') {
-        const existing = getVoiceConnection(message.guild.id);
+        const conn = getVoiceConnection(message.guild.id);
         const target = targetChannels[message.guild.id];
-        if (existing && target) {
-            message.reply(`✅ Bot standby di **${target.name}** — auto rejoin aktif`);
+        if (conn && target) {
+            message.reply(`✅ Standby di **${target.name}**`);
         } else {
             message.reply('❌ Bot tidak ada di voice channel.');
         }
     }
 
-    // PING
     if (message.content === 'ping') {
-        message.reply(`🏓 Pong! Latency: ${client.ws.ping}ms`);
+        message.reply(`🏓 Pong! ${client.ws.ping}ms`);
     }
 
-    // UPTIME
     if (message.content === 'uptime') {
-        const seconds = Math.floor(process.uptime());
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = seconds % 60;
-        message.reply(`⏱️ Uptime: ${h}j ${m}m ${s}d`);
+        const s = Math.floor(process.uptime());
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const d = s % 60;
+        message.reply(`⏱️ Uptime: ${h}j ${m}m ${d}d`);
     }
 
-    // MOVE
     if (message.content.startsWith('move ')) {
-        const channelName = message.content.split(' ').slice(1).join(' ');
-        const voiceChannel = message.guild.channels.cache.find(
-            c => c.type === 2 && c.name.toLowerCase() === channelName.toLowerCase()
+        const name = message.content.split(' ').slice(1).join(' ');
+        const vc = message.guild.channels.cache.find(
+            c => c.type === 2 && c.name.toLowerCase() === name.toLowerCase()
         );
-        if (!voiceChannel) {
-            return message.reply(`❌ Voice channel **${channelName}** tidak ditemukan.`);
-        }
-        targetChannels[message.guild.id] = voiceChannel;
-        joinChannel(voiceChannel, message.guild.id);
-        message.reply(`✅ Pindah ke **${voiceChannel.name}**`);
+        if (!vc) return message.reply(`❌ Channel **${name}** tidak ditemukan.`);
+        targetChannels[message.guild.id] = vc;
+        joinChannel(vc, message.guild.id);
+        message.reply(`✅ Pindah ke **${vc.name}**`);
     }
 
-    // HELP
     if (message.content === 'help') {
         message.reply(`📋 **Commands:**
 \`join\` — Bot join voice channel kamu
 \`leave\` — Bot keluar voice channel
-\`move <nama channel>\` — Pindah ke channel lain
+\`move <nama>\` — Pindah ke channel lain
 \`status\` — Cek status bot
 \`ping\` — Cek latency
-\`uptime\` — Berapa lama bot nyala
-\`help\` — Daftar command`);
+\`uptime\` — Berapa lama bot nyala`);
     }
-
 });
 
-// Auto rejoin kalau bot dipindah ke channel lain (misal AFK channel)
 client.on('voiceStateUpdate', (oldState, newState) => {
     if (newState.member?.id !== client.user.id) return;
-
     const guildId = newState.guild.id;
     const target = targetChannels[guildId];
     if (!target) return;
 
-    // Kalau bot dipindah ke channel yang bukan target
     if (newState.channelId && newState.channelId !== target.id) {
-        console.log(`[auto-rejoin] Bot dipindah ke ${newState.channel?.name}, balik ke ${target.name}...`);
-        setTimeout(() => {
-            joinChannel(target, guildId);
-        }, 1000);
+        console.log(`[auto-rejoin] Dipindah ke ${newState.channel?.name}, balik ke ${target.name}...`);
+        setTimeout(() => joinChannel(target, guildId), 1000);
     }
 
-    // Kalau bot di-kick dari voice
     if (!newState.channelId && oldState.channelId) {
-        console.log(`[auto-rejoin] Bot di-kick, balik ke ${target.name}...`);
-        setTimeout(() => {
-            joinChannel(target, guildId);
-        }, 1000);
+        console.log(`[auto-rejoin] Di-kick, balik ke ${target.name}...`);
+        setTimeout(() => joinChannel(target, guildId), 1000);
     }
 });
 
 client.on('ready', () => {
     console.log(`✅ Logged in as ${client.user.tag}`);
-    console.log(`🔒 Owner: ${OWNER_ID}`);
-    console.log('Commands: join | leave | move | status | ping | uptime | help');
 });
 
 client.login(token);
